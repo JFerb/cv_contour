@@ -48,6 +48,23 @@ class Downsampler(nn.Module):
 
         return x, carry
 
+class Bottleneck(nn.Module):
+
+    def __init__(self, in_channels):
+        super().__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, 2 * in_channels, 3, padding=1, bias=True)
+        self.conv2 = nn.Conv2d(2 * in_channels, 2 * in_channels, 3, padding=1, bias=True)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.conv2(x)
+        x = self.relu(x)
+
+        return x
+
 class Upsampler(nn.Module):
 
     def __init__(self, in_channels):
@@ -62,6 +79,9 @@ class Upsampler(nn.Module):
     def forward(self, carry, x):
         x = self.upsample(x)
         x = self.conv1(x)
+
+        # Mit kernel_size=2 und padding=1 wird die Ausgabe jeweils ein Pixel größer, obwohl sie gleich groß bleiben soll
+        x = x[:, :, :-1, :-1]
 
         # Schneide den Carry zentral so zurecht, dass er die gleichen Dimensionen wie x hat
         carry_h, carry_w = carry.shape[2], carry.shape[3]
@@ -86,7 +106,7 @@ class Summarizer(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
 
-        self.conv = nn.Conv2d(in_channels, 1, 1, stride=1, padding=1, bias=True)
+        self.conv = nn.Conv2d(in_channels, 1, 1, stride=1, padding=0, bias=True)
 
     def forward(self, x):
         x = self.conv(x)

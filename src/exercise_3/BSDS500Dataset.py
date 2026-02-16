@@ -55,6 +55,10 @@ class BSDS500Dataset(Dataset):
                 mask = (np.array(mask) >= 128).astype(int)
                 masks[i] = mask
 
+        # Da die beiden Dimensionen der Bilder für das U-Net idealerweise gerade Zahlen sind, werden die letzte Zeile und Spalte abgeschnitten
+        img = img.crop((0, 0, 480, 320))
+        masks = [mask[:480, :320] for mask in masks]
+
         img = self.transform(img)
 
         if self.split == "train":
