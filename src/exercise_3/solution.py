@@ -63,8 +63,8 @@ if __name__ == "__main__":
 
     HYPERPARAMETERS = {"SEED":                      42,
 
-                       "DEPTH":                      2,
-                       "INITIAL_CHANNELS":           8,
+                       "DEPTH":                      4,
+                       "INITIAL_CHANNELS":           16,
 
                        "EPOCHS":                   100,
                        "BATCH_SIZE":                32,
@@ -81,8 +81,3 @@ if __name__ == "__main__":
     unet.TrainAndTest((BSDS500Dataset("train"),
                        BSDS500Dataset("val"),
                        BSDS500Dataset("test")))
-    """
-
-    from torchinfo import summary
-    summary(unet, input_size=(32, 3, 320, 480))
-    """
