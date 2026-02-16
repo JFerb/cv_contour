@@ -24,9 +24,19 @@ class BSDS500Dataset(Dataset):
 
         self.size = len(self.files)
 
+        #
         # Werte zur Normalisierung stammen von calculate_metrics.py
-        self.transform = transforms.Compose([transforms.ToTensor(),
-                                             transforms.Normalize(mean=(0.43423752017764605,
+        self.train_transform = transforms.Compose([transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+                                                   transforms.ToTensor(),
+                                                   transforms.Normalize(mean=(0.43423752017764605,
+                                                                        0.4430257654788147,
+                                                                        0.367037588525307),
+                                                                  std=(0.24956402339232378,
+                                                                       0.23434712400701474,
+                                                                       0.24183644572722385))])
+
+        self.eval_transform = transforms.Compose([transforms.ToTensor(),
+                                                  transforms.Normalize(mean=(0.43423752017764605,
                                                                         0.4430257654788147,
                                                                         0.367037588525307),
                                                                   std=(0.24956402339232378,
@@ -59,15 +69,29 @@ class BSDS500Dataset(Dataset):
         img = img.crop((0, 0, 480, 320))
         masks = [mask[:320, :480] for mask in masks]
 
-        img = self.transform(img)
-
         if self.split == "train":
             masks = masks[random.randint(0, len(masks) - 1)]
+
+            # Manuelle Augmentation für Bild und Maske
+            if random.random() > 0.5:  # Horizontal spiegeln
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                masks = np.fliplr(masks).copy()
+
+            if random.random() > 0.5:  # Vertikal spiegeln
+                img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                masks = np.flipud(masks).copy()
+
+            img = self.train_transform(img)
             masks = torch.from_numpy(masks).long()
+
             return img, masks
         elif self.split == "val":
+            img = self.eval_transform(img)
             masks = [torch.from_numpy(mask).long() for mask in masks]
+
             return img, masks
         else: # self.split == "test"
+            img = self.eval_transform(img)
             masks = [torch.from_numpy(mask).long() for mask in masks]
+
             return img, masks, self.files[idx].split(".")[0]

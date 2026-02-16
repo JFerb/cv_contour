@@ -6,11 +6,13 @@ import torch.nn as nn
 
 class Initializer(nn.Module):
 
-    def __init__(self, out_channels):
+    def __init__(self, out_channels, size):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(3, out_channels, 3, stride=1, padding=1, bias=True)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, stride=1, padding=1, bias=True)
+        padding = (size - 1) // 2
+
+        self.conv1 = nn.Conv2d(3, out_channels, size, stride=1, padding=padding, bias=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, size, stride=1, padding=padding, bias=True)
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2)
 
@@ -28,11 +30,13 @@ class Initializer(nn.Module):
 
 class Downsampler(nn.Module):
 
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, size):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(in_channels, 2 * in_channels, 3, stride=1, padding=1, bias=True)
-        self.conv2 = nn.Conv2d(2 * in_channels, 2 * in_channels, 3, stride=1, padding=1, bias=True)
+        padding = (size - 1) // 2
+
+        self.conv1 = nn.Conv2d(in_channels, 2 * in_channels, size, stride=1, padding=padding, bias=True)
+        self.conv2 = nn.Conv2d(2 * in_channels, 2 * in_channels, size, stride=1, padding=padding, bias=True)
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2)
 
@@ -50,11 +54,13 @@ class Downsampler(nn.Module):
 
 class Bottleneck(nn.Module):
 
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, size):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(in_channels, 2 * in_channels, 3, padding=1, bias=True)
-        self.conv2 = nn.Conv2d(2 * in_channels, 2 * in_channels, 3, padding=1, bias=True)
+        padding = (size - 1) // 2
+
+        self.conv1 = nn.Conv2d(in_channels, 2 * in_channels, size, padding=padding, bias=True)
+        self.conv2 = nn.Conv2d(2 * in_channels, 2 * in_channels, size, padding=padding, bias=True)
         self.relu = nn.ReLU()
 
     def forward(self, x):
@@ -67,13 +73,15 @@ class Bottleneck(nn.Module):
 
 class Upsampler(nn.Module):
 
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, size):
         super().__init__()
+
+        padding = (size - 1) // 2
 
         self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
         self.conv1 = nn.Conv2d(in_channels, in_channels // 2, 2, stride=1, padding=1, bias=True)
-        self.conv2 = nn.Conv2d(in_channels, in_channels // 2, 3, stride=1, padding=1, bias=True)
-        self.conv3 = nn.Conv2d(in_channels // 2, in_channels // 2, 3, stride=1, padding=1, bias=True)
+        self.conv2 = nn.Conv2d(in_channels, in_channels // 2, size, stride=1, padding=padding, bias=True)
+        self.conv3 = nn.Conv2d(in_channels // 2, in_channels // 2, size, stride=1, padding=padding, bias=True)
         self.relu = nn.ReLU()
 
     def forward(self, carry, x):
@@ -82,15 +90,6 @@ class Upsampler(nn.Module):
 
         # Mit kernel_size=2 und padding=1 wird die Ausgabe jeweils ein Pixel größer, obwohl sie gleich groß bleiben soll
         x = x[:, :, :-1, :-1]
-
-        # Schneide den Carry zentral so zurecht, dass er die gleichen Dimensionen wie x hat
-        carry_h, carry_w = carry.shape[2], carry.shape[3]
-        x_h, x_w = x.shape[2], x.shape[3]
-
-        h_offset = (carry_h - x_h) // 2
-        w_offset = (carry_w - x_w) // 2
-
-        carry = carry[:, :, h_offset:h_offset + x_h, w_offset:w_offset + x_w]
 
         x = torch.cat([carry, x], dim=1)
 

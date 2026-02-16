@@ -6,6 +6,8 @@ import torch.nn as nn
 from scipy.ndimage import binary_dilation
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 
 from EarlyStopping import EarlyStopping
 from Utils import *
@@ -48,7 +50,11 @@ class ModelManager:
         self.location = None
 
         # Da Klassifikationsprobleme betrachtet werden, wird CrossEntropyLoss verwendet.
-        self.loss_fn = nn.BCEWithLogitsLoss()
+        # Da das Verhältnis der Klassen (Kante <-> Nicht-Kante) sehr unausgeglichen ist, werden Kantenpixel mit
+        # einem in calculate_metrics.py berechneten Faktor überbewertet, der in der Loss-Berechnung
+        # ein Gleichgewicht herstellt.
+        weight = torch.tensor([55.2793]).to(GetBestDevice())
+        self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=weight)
 
         # Während des Trainings werden Metriken für Trainings- und Validierungsdatensatz gespeichert.
         self.metrics = {}
@@ -82,6 +88,8 @@ class ModelManager:
         # Speichere die Metriken des Modells.
         with open(os.path.join(self.location, "metrics.json"), "w") as f:
             json.dump(self.metrics, f, indent=4)
+
+        self._plot()
 
     # Starte den Trainingsprozess.
     def _train(self):
@@ -312,6 +320,48 @@ class ModelManager:
             results = results[cols_to_front + [col for col in results.columns if col not in cols_to_front]]
             results.to_csv(os.path.join(self.location, "summary.csv"))
 
+    def _plot(self):
+        # Veranschauliche die Trainingsergebnisse.
+        with open(os.path.join(self.location, "metrics.json"), "r") as f:
+            metrics = json.load(f)
+
+        best_epoch = metrics["best_epoch"]
+        epochs = list(range(1, best_epoch + 1))
+
+        train_loss = [metrics[str(e)]["training"]["loss"] for e in epochs]
+        val_loss = [metrics[str(e)]["validation"]["loss"] for e in epochs]
+        test_loss = metrics["testing"]["loss"]
+
+        train_f1 = [metrics[str(e)]["training"]["f1"] for e in epochs]
+        val_f1 = [metrics[str(e)]["validation"]["f1"] for e in epochs]
+        test_f1 = metrics["testing"]["f1"]
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10))
+
+        # Oberer Plot: Loss
+        ax1.plot(epochs, train_loss, label="Trainingsdatensatz", color="blue")
+        ax1.plot(epochs, val_loss, label="Validierungsdatensatz", color="orange")
+        ax1.axhline(y=test_loss, color="red", linestyle="--", linewidth=2, label="Testdatensatz")
+        ax1.set_xlabel("Epoche", fontsize=12)
+        ax1.set_ylabel("Loss", fontsize=12)
+        ax1.set_title("Entwicklung des Loss", fontweight="bold", fontsize=15)
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Unterer Plot: F1
+        ax2.plot(epochs, train_f1, label="Trainingsdatensatz", color="blue")
+        ax2.plot(epochs, val_f1, label="Validierungsdatensatz", color="orange")
+        ax2.axhline(y=test_f1, color="red", linestyle="--", linewidth=2, label=f"Testdatensatz ({(test_f1*100):.2f}%)")
+        ax2.set_xlabel("Epoche", fontsize=12)
+        ax2.set_ylabel("F1", fontsize=12)
+        ax2.set_title("Entwicklung des F-Maßes", fontweight="bold", fontsize=15)
+        ax2.yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0))
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.location, "plot.png"), dpi=200)
+
     def _archive_hyperparameters(self):
         path = os.path.join(self.location, "hyperparameters.txt")
 
@@ -322,6 +372,7 @@ class ModelManager:
 
             f.write(f"DEPTH                   = {self.HYPERPARAMETERS["DEPTH"]}\n")
             f.write(f"INITIAL_CHANNELS        = {self.HYPERPARAMETERS["INITIAL_CHANNELS"]}\n")
+            f.write(f"CONVOLUTION_SIZE        = {self.HYPERPARAMETERS["CONVOLUTION_SIZE"]}\n")
 
             f.write(f"\n")
 

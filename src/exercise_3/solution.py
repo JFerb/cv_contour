@@ -9,21 +9,24 @@ class UNet(nn.Module):
         super().__init__()
 
         self.HYPERPARAMETERS = HYPERPARAMETERS
+        depth = self.HYPERPARAMETERS["DEPTH"]
+        initial_channels = self.HYPERPARAMETERS["INITIAL_CHANNELS"]
+        convolution_size = self.HYPERPARAMETERS["CONVOLUTION_SIZE"]
 
-        self.initializer = Initializer(self.HYPERPARAMETERS["INITIAL_CHANNELS"])
+        self.initializer = Initializer(initial_channels, convolution_size)
 
         self.downsamplers = nn.ModuleList()
-        for i in range(self.HYPERPARAMETERS["DEPTH"] - 1):
-            self.downsamplers.append(Downsampler(self.HYPERPARAMETERS["INITIAL_CHANNELS"] * (2 ** i)))
+        for i in range(depth - 1):
+            self.downsamplers.append(Downsampler(initial_channels * (2 ** i), convolution_size))
 
-        self.bottleneck = Bottleneck(self.HYPERPARAMETERS["INITIAL_CHANNELS"] * (2 ** (self.HYPERPARAMETERS["DEPTH"] - 1)))
+        self.bottleneck = Bottleneck(initial_channels * (2 ** (depth - 1)), convolution_size)
 
         self.upsamplers = nn.ModuleList()
-        for i in range(self.HYPERPARAMETERS["DEPTH"]):
-            self.upsamplers.append(Upsampler(self.HYPERPARAMETERS["INITIAL_CHANNELS"] * (2 ** (i + 1))))
+        for i in range(depth):
+            self.upsamplers.append(Upsampler(initial_channels * (2 ** (i + 1)), convolution_size))
         self.upsamplers = nn.ModuleList(reversed(self.upsamplers))
 
-        self.summarizer = Summarizer(self.HYPERPARAMETERS["INITIAL_CHANNELS"])
+        self.summarizer = Summarizer(initial_channels)
 
     def forward(self, x):
         # Speichere die zu übertragenen Feature Maps
@@ -63,12 +66,13 @@ if __name__ == "__main__":
 
     HYPERPARAMETERS = {"SEED":                      42,
 
-                       "DEPTH":                      4,
-                       "INITIAL_CHANNELS":           16,
+                       "DEPTH":                      3,
+                       "INITIAL_CHANNELS":           8,
+                       "CONVOLUTION_SIZE":           7,
 
                        "EPOCHS":                   100,
-                       "BATCH_SIZE":                32,
-                       "LEARNING_RATE":           1e-3,
+                       "BATCH_SIZE":                16,
+                       "LEARNING_RATE":           1e-4,
                        "EARLY_STOPPING_PATIENCE":   10,
                        "EARLY_STOPPING_DELTA":       0,
 
