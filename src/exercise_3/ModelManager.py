@@ -80,7 +80,7 @@ class ModelManager:
         self._test()
 
         # Speichere die Metriken des Modells.
-        with open(os.path.join(self.location, f"metrics_{self.model.name}.json"), "w") as f:
+        with open(os.path.join(self.location, "metrics.json"), "w") as f:
             json.dump(self.metrics, f, indent=4)
 
     # Starte den Trainingsprozess.
@@ -119,7 +119,7 @@ class ModelManager:
 
                 # Berechne Modellvorhersage und berechne Loss.
                 pred = self.model(x)
-                loss = self.loss_fn(pred, y)
+                loss = self.loss_fn(pred, y.unsqueeze(1).float())
 
                 # Falls der Loss NaN sein sollte, wird angebrochen.
                 if torch.isnan(loss):
@@ -182,7 +182,7 @@ class ModelManager:
                 instance_loss = 0
                 for mask in y:
                     mask = mask.to(GetBestDevice())
-                    loss = self.loss_fn(pred, mask)
+                    loss = self.loss_fn(pred, mask.unsqueeze(1).float())
 
                     if torch.isnan(loss):
                         print("Loss ist NaN.")
@@ -216,15 +216,15 @@ class ModelManager:
 
             # Das Modell wird gespeichert, falls es besser ist als das aktuell beste. Das alte Modell wird gelöscht.
             if self.early_stopping.hasImproved():
-                [os.remove(os.path.join(self.location, f)) for f in os.listdir(self.location) if f.startswith(f"best_{self.model.name}")]
-                torch.save(self.model, os.path.join(self.location, f"best_{self.model.name}_epoch_{self.epoch}.pt"))
+                [os.remove(os.path.join(self.location, f)) for f in os.listdir(self.location) if f.startswith("best_model")]
+                torch.save(self.model, os.path.join(self.location, f"best_model_epoch_{self.epoch}.pt"))
 
                 self.best_epoch = self.epoch
 
     # Teste das Modell auf dem Testdatensatz.
     def _test(self):
         # Lade das beste trainierte Modell.
-        best_model = torch.load(os.path.join(self.location, f"best_{self.model.name}_epoch_{self.best_epoch}.pt"))
+        best_model = torch.load(os.path.join(self.location, f"best_model_epoch_{self.best_epoch}.pt"))
         self.model.load_state_dict(best_model.state_dict())
         self.model = self.model.to(GetBestDevice())
 
@@ -251,7 +251,7 @@ class ModelManager:
                 instance_loss = 0
                 for i, mask in enumerate(y):
                     mask = mask.to(GetBestDevice())
-                    loss = self.loss_fn(pred, mask)
+                    loss = self.loss_fn(pred, mask.unsqueeze(1).float())
 
                     if torch.isnan(loss):
                         print("Loss ist NaN.")
@@ -340,6 +340,10 @@ class ModelManager:
             f.write(f"PARAMETER_COUNT         = {format(sum(p.numel() for p in self.model.parameters() if p.requires_grad), ',').replace(",", ".")}")
 
     def _compute_metrics(self, pred, target):
+        # Die Kanaldimension wird nicht benötigt
+        if pred.dim() == 4:
+            pred = pred.squeeze(1)
+
         pred = (pred >= 0.5).cpu().numpy().astype(bool)
         target = target.cpu().numpy().astype(bool)
 

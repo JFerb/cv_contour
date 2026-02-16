@@ -5,8 +5,6 @@ from Utils import InitRNG
 
 class UNet(nn.Module):
 
-    name = "U-Net"
-
     def __init__(self, HYPERPARAMETERS):
         super().__init__()
 
@@ -65,8 +63,8 @@ if __name__ == "__main__":
 
     HYPERPARAMETERS = {"SEED":                      42,
 
-                       "DEPTH":                      4,
-                       "INITIAL_CHANNELS":          64,
+                       "DEPTH":                      2,
+                       "INITIAL_CHANNELS":           8,
 
                        "EPOCHS":                   100,
                        "BATCH_SIZE":                32,
@@ -79,11 +77,12 @@ if __name__ == "__main__":
     InitRNG(HYPERPARAMETERS["SEED"])
 
     unet = UNet(HYPERPARAMETERS)
+
     unet.TrainAndTest((BSDS500Dataset("train"),
                        BSDS500Dataset("val"),
                        BSDS500Dataset("test")))
+    """
 
-    '''
     from torchinfo import summary
     summary(unet, input_size=(32, 3, 320, 480))
-    '''
+    """

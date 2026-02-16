@@ -57,7 +57,7 @@ class BSDS500Dataset(Dataset):
 
         # Da die beiden Dimensionen der Bilder für das U-Net idealerweise gerade Zahlen sind, werden die letzte Zeile und Spalte abgeschnitten
         img = img.crop((0, 0, 480, 320))
-        masks = [mask[:480, :320] for mask in masks]
+        masks = [mask[:320, :480] for mask in masks]
 
         img = self.transform(img)
 
