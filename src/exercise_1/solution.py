@@ -1,13 +1,10 @@
 import os
-import sys
 
 from PIL import Image, ImageFilter
 import numpy as np
 import scipy
-from scipy.io import loadmat
 from scipy.ndimage import convolve, binary_dilation
 import pandas as pd
-from pprint import pprint
 
 ########################################################################################################################
 
@@ -158,7 +155,6 @@ def canny(img, upper, lower, std=None):
 def read_ground_truth(name):
     name = name.replace("images", "groundTruth")
     name = name.replace(".jpg", ".mat")
-    name = name.replace(".jpeg", ".mat")
 
     data = scipy.io.loadmat(name)
     data = data["groundTruth"][0]
@@ -224,14 +220,13 @@ if __name__ == "__main__":
     SIGMA = 1
 
     BASE_PATH = "../../BSDS500/BSDS500/data/images/test"
-    folder_name = os.path.basename(BASE_PATH)
     files = os.listdir(BASE_PATH)
-    count = sum(1 for file in files if file.lower().endswith((".jpg", ".jpeg")))
+    count = sum(1 for file in files if file.lower().endswith(".jpg"))
 
     summary = []
     i = 1
     for file in files:
-        if file.lower().endswith((".jpg", ".jpeg")):
+        if file.lower().endswith(".jpg"):
             print(f"Verarbeite Bild {i} von {count}.")
             i += 1
 
