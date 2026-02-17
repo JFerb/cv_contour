@@ -18,25 +18,14 @@ from exercise_1.solution import image_from_array
 ########################################################################################################################
 # Constants/Hyperparameters
 BASE_PATH = "../../BSDS500/BSDS500/data/"
-IMAGE_BATCH_SIZE = 8
 PIXEL_BATCH_SIZE = 2048
 N_EPOCHS = 10
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.001
 ########################################################################################################################
-class BSDS500Dataset(Dataset):
-    def __init__(self, image_data):
-        self.image_data = image_data
-
-    def __len__(self):
-        return len(self.image_data)
-
-    def __getitem__(self, idx):
-        features, labels = self.image_data[idx]
-        return features, labels
-    
 class MLP(nn.Module):
-    def __init__(self, input_size):
+    def __init__(self, input_size, name):
         super(MLP, self).__init__()
+        self.name = "MLP_" + name
         self.fc1 = nn.Linear(input_size, 128)
         self.fc2 = nn.Linear(128, 128)
         self.fc3 = nn.Linear(128, 1)
@@ -46,6 +35,19 @@ class MLP(nn.Module):
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
+class ImageDataset(Dataset):
+    def __init__(self, features, labels):
+        self.features = features
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.features)
+
+    def __getitem__(self, idx):
+        features = self.features[idx]
+        labels = self.labels[idx]
+        return features, labels
 
 def load_data(split):
     images = sorted(os.listdir(os.path.join(BASE_PATH, "images", split)))
@@ -62,12 +64,15 @@ def load_ground_truth(split):
     return ground_truths
 
 def preprocess(images, ground_truths, split):
+    image_names = [image.replace(".jpg", "") for image in images]
+    ground_truth_names = [ground_truth.replace(".mat", "") for ground_truth in ground_truths]
+    assert image_names == ground_truth_names, "Image and ground truth names do not match"
     images = [Image.open(os.path.join(BASE_PATH, "images", split, image)) for image in images]
     ground_truths = [loadmat(os.path.join(BASE_PATH, "groundTruth", split, file))["groundTruth"][0][0][0][0][1] for file in ground_truths]
     images = [img.rotate(90, expand=True) if img.size[1] > img.size[0] else img for img in images]
     ground_truths = [image_from_array(gt).rotate(90, expand=True) if gt.shape[1] > gt.shape[0] else gt for gt in ground_truths]
-    ground_truths = [(np.array(mask) >= 128).astype(int) for mask in ground_truths]
-    return images, ground_truths
+    ground_truths = [(np.array(mask) >= 128).astype(int).astype(np.float32) for mask in ground_truths]
+    return images, ground_truths, image_names
 
 def extract_features(image):
     x_kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32)
@@ -82,87 +87,69 @@ def extract_features(image):
     features = np.stack([r, g, b, gray, dx, dy, magnitude], axis=-1)
     return features.reshape(-1, 7)
     
+def select_pixels(features, labels):
+    num_pixels = features.shape[0]
+    num_edges = np.where(labels == 1)[0].shape[0]    
+    total_training_pixels = int(0.1 * num_pixels)
+    if num_edges < total_training_pixels / 2:
+        num_training_edges = num_edges
+        num_training_non_edges = total_training_pixels - num_training_edges
+    else:
+        num_training_edges = total_training_pixels / 2
+        num_training_non_edges = total_training_pixels - num_training_edges
+    edges = np.random.choice(np.where(labels == 1)[0], size=num_training_edges, replace=False)
+    non_edges = np.random.choice(np.where(labels == 0)[0], size=num_training_non_edges, replace=False)
+    pixels = np.concatenate([edges, non_edges])
+    training_features = features[pixels]
+    training_labels = labels[pixels]
+    pos_weight = torch.tensor([num_training_non_edges / max(num_training_edges, 1)], dtype=torch.float32) 
+    return training_features, training_labels, pos_weight
+
+def normalize_features(features):
+    return (features - features.mean(axis=0)) / features.std(axis=0)
+    
+
 if __name__ == "__main__":
     # Training
     train_images = load_data("train")
     train_ground_truth = load_ground_truth("train")
-    train_images, train_ground_truth = preprocess(train_images, train_ground_truth, "train")
+    val_images = load_data("val")
+    val_ground_truth = load_ground_truth("val")
+    test_images = load_data("test")
+    test_ground_truth = load_ground_truth("test")
+    train_images, train_ground_truth, image_names = preprocess(train_images, train_ground_truth, "train")
+    val_images, val_ground_truth, val_image_names = preprocess(val_images, val_ground_truth, "val")
+    test_images, test_ground_truth, test_image_names = preprocess(test_images, test_ground_truth, "test")
+    images = train_images + val_images + test_images
+    ground_truths = train_ground_truth + val_ground_truth + test_ground_truth
+    image_names = image_names + val_image_names + test_image_names
     # Extract features
     training_data = []
-    for img, gt in zip(train_images, train_ground_truth):
+    for img, gt, img_name in zip(images, ground_truths, image_names):
         features = extract_features(img)
         labels = gt.flatten()
-        training_data.append((features, labels))
-    # Normalize features
-    all_features = np.vstack([f for f,_ in training_data])
-    mean = np.mean(all_features, axis=0)
-    std = np.std(all_features, axis=0)
-    training_data = [((f - mean) / (std + 1e-8), l) for f, l in training_data]
-    print("Extracted features for", len(training_data), "images, each with", training_data[0][0].shape[0], "pixels.")
-    print("Each pixel has", training_data[0][0].shape[1], "features.")
-    # Create dataset and loader
-    train_dataset = BSDS500Dataset(training_data)
-    train_loader = DataLoader(train_dataset, batch_size=IMAGE_BATCH_SIZE, shuffle=True)
-    model = MLP(training_data[0][0].shape[1])
-    # Create criterion and optimizer
-    all_labels = np.concatenate([labels for _, labels in training_data])
-    num_positives = all_labels.sum()
-    num_negatives = len(all_labels) - num_positives
-    pos_weight = torch.tensor([num_negatives / (2 * max(num_positives, 1))], dtype=torch.float32)
-    print(f"Class balance: {num_positives:.0f} edges, {num_negatives:.0f} non-edges, pos_weight={pos_weight.item():.2f}")
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    # Train model
-    for epoch in range(N_EPOCHS):
-        for features, labels in tqdm(train_loader):
-            features_flat = features.reshape(-1, features.shape[-1]) # (H*W, 7)
-            labels_flat = labels.reshape(-1).float().unsqueeze(-1) # (H*W,)
-            num_pixels = features.shape[0] * features.shape[1] # H*W
-            loss_sum = 0
-            for i in range(0,num_pixels, PIXEL_BATCH_SIZE):
-                batch_f = features_flat[i:i+PIXEL_BATCH_SIZE] # (B*H*W, 7)
-                batch_l = labels_flat[i:i+PIXEL_BATCH_SIZE] # (B*H*W,)
-                output = model.forward(batch_f)
+        training_data.append({"features": features, "labels": labels, "image_name": img_name})
+    # Loop over all images 
+    for i, image in enumerate(tqdm(training_data)):
+        features = image["features"]
+        labels = image["labels"]
+        image_name = image["image_name"]
+        # Select 10% of pixels and compute pos_weight
+        training_features, training_labels, pos_weight = select_pixels(features, labels)
+        # Normalize features
+        training_features = normalize_features(training_features)
+        training_dataset = ImageDataset(training_features, training_labels)
+        training_loader = DataLoader(training_dataset, batch_size=1024, shuffle=True)
+        loss_total = 0
+        for epoch in range(N_EPOCHS):
+            for features, labels in training_loader:
+                model = MLP(input_size=features.shape[1], name=image_name)
+                optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+                criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
                 optimizer.zero_grad()
-                loss = criterion(output, batch_l)
+                outputs = model(features)
+                loss = criterion(outputs.squeeze(-1), labels)
                 loss.backward()
                 optimizer.step()
-                loss_sum += loss.item()
-            print(f"Epoch {epoch + 1} / {N_EPOCHS}, Batch Loss: {loss_sum / PIXEL_BATCH_SIZE}")
-
-    # Test model
-    test_filenames = load_data("test")
-    test_ground_truth = load_ground_truth("test")
-    test_images, test_ground_truth = preprocess(test_filenames, test_ground_truth, "test")
-    # Extract features
-    test_data = []
-    for img, gt in zip(test_images, test_ground_truth):
-        features = extract_features(img)
-        labels = gt.flatten()
-        test_data.append((features, labels))
-    # Normalize features
-    all_features = np.vstack([f for f,_ in test_data])
-    mean = np.mean(all_features, axis=0)
-    std = np.std(all_features, axis=0)
-    test_data = [((f - mean) / (std + 1e-8), l) for f, l in test_data]
-    # Create dataset and loader
-    test_dataset = BSDS500Dataset(test_data)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
-    # Test model
-    summary = []
-    for i, (features, labels) in enumerate(tqdm(test_loader)):
-        image_id = os.path.splitext(test_filenames[i])[0]
-        features_flat = features.reshape(-1, features.shape[-1]) # (H*W, 7)
-        labels_flat = labels.reshape(-1).float().unsqueeze(-1) # (H*W,)
-        predictions = model.forward(features_flat)
-        pred_bin = (torch.sigmoid(predictions) >= 0.5).long().cpu().numpy()
-        pred_2d = pred_bin.reshape(321, 481)
-        labels_2d = labels_flat.int().cpu().numpy().reshape(321, 481)
-        metrics = compute_metrics(pred_2d, labels_2d, tolerance=2)
-        row = {"id": image_id}
-        for key, value in metrics.items():
-            row[key] = value
-        summary.append(row)
-    summary = pd.DataFrame(summary)
-    summary.to_csv("summary.csv")
-        
+                loss_total += loss.item()
+        print(f"Average loss: {loss_total / len(training_loader)}")
