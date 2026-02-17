@@ -4,3 +4,5 @@
 __pycache__/
 
 src/exercise_3/models
+src/exercise_3/palma
+src/exercise_3/download.sh
