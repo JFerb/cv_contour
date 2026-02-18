@@ -115,7 +115,7 @@ class ModelManager:
             self.model.train()
 
             # Erstelle die Fortschrittsleiste mit tqdm und durchlaufe alle Batches.
-            pbar = tqdm(self.train_loader, desc=f"Training von Epoche {self.epoch}/{self.HYPERPARAMETERS["EPOCHS"]}")
+            pbar = tqdm(self.train_loader, desc=f"Training von Epoche {self.epoch}/{self.HYPERPARAMETERS['EPOCHS']}")
 
             training_loss = 0
             preds = []
@@ -180,7 +180,7 @@ class ModelManager:
         preds = []
         targets = []
         with torch.no_grad():
-            pbar = tqdm(self.val_loader, desc=f"Validierung von Epoche {self.epoch}/{self.HYPERPARAMETERS["EPOCHS"]}")
+            pbar = tqdm(self.val_loader, desc=f"Validierung von Epoche {self.epoch}/{self.HYPERPARAMETERS['EPOCHS']}")
 
             for x, y in pbar:
                 x = x.to(GetBestDevice())
@@ -366,29 +366,29 @@ class ModelManager:
         path = os.path.join(self.location, "hyperparameters.txt")
 
         with open(path, "w") as f:
-            f.write(f"SEED                    = {self.HYPERPARAMETERS["SEED"]}\n")
+            f.write(f"SEED                    = {self.HYPERPARAMETERS['SEED']}\n")
 
             f.write(f"\n")
 
-            f.write(f"DEPTH                   = {self.HYPERPARAMETERS["DEPTH"]}\n")
-            f.write(f"INITIAL_CHANNELS        = {self.HYPERPARAMETERS["INITIAL_CHANNELS"]}\n")
-            f.write(f"CONVOLUTION_SIZE        = {self.HYPERPARAMETERS["CONVOLUTION_SIZE"]}\n")
+            f.write(f"DEPTH                   = {self.HYPERPARAMETERS['DEPTH']}\n")
+            f.write(f"INITIAL_CHANNELS        = {self.HYPERPARAMETERS['INITIAL_CHANNELS']}\n")
+            f.write(f"CONVOLUTION_SIZE        = {self.HYPERPARAMETERS['CONVOLUTION_SIZE']}\n")
 
             f.write(f"\n")
 
-            f.write(f"EPOCHS                  = {self.HYPERPARAMETERS["EPOCHS"]}\n")
-            f.write(f"BATCH_SIZE              = {self.HYPERPARAMETERS["BATCH_SIZE"]}\n")
-            f.write(f"LEARNING_RATE           = {self.HYPERPARAMETERS["LEARNING_RATE"]}\n")
-            f.write(f"EARLY_STOPPING_PATIENCE = {self.HYPERPARAMETERS["EARLY_STOPPING_PATIENCE"]}\n")
-            f.write(f"EARLY_STOPPING_DELTA    = {self.HYPERPARAMETERS["EARLY_STOPPING_DELTA"]}\n")
+            f.write(f"EPOCHS                  = {self.HYPERPARAMETERS['EPOCHS']}\n")
+            f.write(f"BATCH_SIZE              = {self.HYPERPARAMETERS['BATCH_SIZE']}\n")
+            f.write(f"LEARNING_RATE           = {self.HYPERPARAMETERS['LEARNING_RATE']}\n")
+            f.write(f"EARLY_STOPPING_PATIENCE = {self.HYPERPARAMETERS['EARLY_STOPPING_PATIENCE']}\n")
+            f.write(f"EARLY_STOPPING_DELTA    = {self.HYPERPARAMETERS['EARLY_STOPPING_DELTA']}\n")
 
             f.write(f"\n")
 
-            f.write(f"TOLERANCE               = {self.HYPERPARAMETERS["TOLERANCE"]}\n")
+            f.write(f"TOLERANCE               = {self.HYPERPARAMETERS['TOLERANCE']}\n")
 
             f.write(f"\n")
 
-            f.write(f"PARAMETER_COUNT         = {format(sum(p.numel() for p in self.model.parameters() if p.requires_grad), ',').replace(",", ".")}")
+            f.write(f"PARAMETER_COUNT         = {format(sum(p.numel() for p in self.model.parameters() if p.requires_grad), ',').replace(',', '.')}")
 
     def _compute_metrics(self, pred, target):
         # Die Kanaldimension wird nicht benötigt

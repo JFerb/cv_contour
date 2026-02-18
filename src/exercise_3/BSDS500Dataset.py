@@ -3,6 +3,7 @@ import random
 
 import numpy as np
 import scipy
+from scipy.io import loadmat
 import torch
 from PIL import Image
 from torch.utils.data import Dataset

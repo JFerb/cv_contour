@@ -66,8 +66,8 @@ if __name__ == "__main__":
 
     HYPERPARAMETERS = {"SEED":                      42,
 
-                       "DEPTH":                      3,
-                       "INITIAL_CHANNELS":           8,
+                       "DEPTH":                      4,
+                       "INITIAL_CHANNELS":          32,
                        "CONVOLUTION_SIZE":           7,
 
                        "EPOCHS":                   100,

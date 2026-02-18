@@ -15,7 +15,8 @@ def InitRNG(seed):
     torch.backends.cudnn.benchmark = False
 
     # Metal soll ebenfalls deterministisch sein.
-    torch.mps.manual_seed(seed)
+    if GetBestDevice() == "mps":
+        torch.mps.manual_seed(seed)
 
     # Für alle sonstigen Fälle.
     torch.use_deterministic_algorithms(True)
