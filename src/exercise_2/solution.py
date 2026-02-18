@@ -163,12 +163,12 @@ if __name__ == "__main__":
         # Normalize features
         training_features = normalize_features(training_features)
         training_dataset = ImageDataset(training_features, training_labels)
-        training_loader = DataLoader(training_dataset, batch_size=1024, shuffle=True)
+        training_loader = DataLoader(training_dataset, batch_size=PIXEL_BATCH_SIZE, shuffle=True)
+        model = MLP(input_size=training_features.shape[1], name=image_name)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         for epoch in range(N_EPOCHS):
             for features, labels in training_loader:
-                model = MLP(input_size=features.shape[1], name=image_name)
-                optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-                criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
                 optimizer.zero_grad()
                 outputs = model(features)
                 loss = criterion(outputs.squeeze(-1), labels)
@@ -178,6 +178,7 @@ if __name__ == "__main__":
         # Inference on other 90% of pixels
         inference_pixels = all_pixels[~np.isin(all_pixels, training_pixels)]
         inference_features = torch.tensor(all_features[inference_pixels])
+        inference_features = normalize_features(inference_features)
         inference_labels = torch.tensor(all_labels[inference_pixels])
         predictions = model(inference_features)
         pred_bin = (torch.sigmoid(predictions) >= 0.5).int().squeeze(-1)
@@ -201,10 +202,10 @@ if __name__ == "__main__":
         row["fn"] = metrics["fn"]
         summary.append(row)
         # Save edge mask and ground truth in one file
-        # edge_mask_img = image_from_array(edge_mask)
-        # ground_truth_img = image_from_array(all_labels.reshape(h, w))
-        # combined_img = create_comparison_image(images[i], edge_mask_img, ground_truth_img)
-        # combined_img.save(f"edge_masks/comparison_{image_name}.png")
+        edge_mask_img = image_from_array(edge_mask)
+        ground_truth_img = image_from_array(all_labels.reshape(h, w))
+        combined_img = create_comparison_image(images[i], edge_mask_img, ground_truth_img)
+        combined_img.save(f"edge_masks/comparison_{image_name}.png")
 
     summary = pd.DataFrame(summary)
     summary.to_csv("summary.csv")
