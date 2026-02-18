@@ -63,7 +63,7 @@ class BSDS500Dataset(Dataset):
                 mask = Image.fromarray(masks[i])
                 mask = mask.rotate(90, expand=True)
                 mask = np.asarray(mask)
-                mask = (np.array(mask) >= 128).astype(int)
+                mask = (np.array(mask) > 0).astype(int)
                 masks[i] = mask
 
         # Da die beiden Dimensionen der Bilder für das U-Net idealerweise gerade Zahlen sind, werden die letzte Zeile und Spalte abgeschnitten

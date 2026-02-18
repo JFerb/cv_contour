@@ -2,6 +2,9 @@ import random
 
 import numpy as np
 import torch
+from scipy.ndimage import convolve
+
+########################################################################################################################
 
 def InitRNG(seed):
     # Reguläre Zufallskomponenten der Bibliotheken.
@@ -20,6 +23,8 @@ def InitRNG(seed):
 
     # Für alle sonstigen Fälle.
     torch.use_deterministic_algorithms(True)
+
+########################################################################################################################
 
 def GetBestDevice():
     # Bevorzuge CUDA für effizientes Training.

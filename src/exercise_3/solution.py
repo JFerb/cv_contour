@@ -1,3 +1,6 @@
+import numpy as np
+import skimage
+
 from ModelManager import ModelManager
 from BSDS500Dataset import BSDS500Dataset
 from Components import *
@@ -60,14 +63,25 @@ class UNet(nn.Module):
         mgr = ModelManager(self, datasets, self.HYPERPARAMETERS)
         mgr.TrainAndTest()
 
+    def predict(self, x):
+        with torch.no_grad():
+            output = self.forward(x)
+            output = torch.sigmoid(output).squeeze().cpu().numpy()
+            output = (output >= 0.5)
+            output = skimage.morphology.thin(output)
+            output = output.astype(np.uint8) * 255
+
+        return output
+
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore")
 
+    # Berechnetes POS_WEIGHT: 55.2793
     HYPERPARAMETERS = {"SEED":                      42,
 
-                       "DEPTH":                      4,
-                       "INITIAL_CHANNELS":          32,
+                       "DEPTH":                      3,
+                       "INITIAL_CHANNELS":           8,
                        "CONVOLUTION_SIZE":           7,
 
                        "EPOCHS":                   100,
@@ -75,6 +89,10 @@ if __name__ == "__main__":
                        "LEARNING_RATE":           1e-4,
                        "EARLY_STOPPING_PATIENCE":   10,
                        "EARLY_STOPPING_DELTA":       0,
+
+                       "LOSS_FUNCTION":        "dice",
+                       "POS_WEIGHT":             None,
+                       "BCE_FACTOR":             None,
 
                        "TOLERANCE":                  2}
 

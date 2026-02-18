@@ -215,8 +215,8 @@ def compute_metrics(predicted, ground_truth, tolerance=2):
 
 if __name__ == "__main__":
     # Hyperparameter
-    UPPER = 300
-    LOWER = 150
+    UPPER = 200
+    LOWER = 100
     SIGMA = 1
 
     BASE_PATH = "../../BSDS500/BSDS500/data/images/test"
@@ -244,7 +244,7 @@ if __name__ == "__main__":
 
                 # Also rotate ground truths
                 edge_masks = [image_from_array(mask).rotate(90, expand=True) for mask in edge_masks]
-                edge_masks = [(np.array(mask) >= 128).astype(int) for mask in edge_masks]
+                edge_masks = [(np.array(mask) > 0).astype(int) for mask in edge_masks]
 
             result = canny(img, UPPER, LOWER, SIGMA)
 
@@ -280,4 +280,4 @@ if __name__ == "__main__":
     cols_to_front = [col for col in summary.columns if "best" in col or "mean" in col]
     cols_to_front.insert(0, "id")
     summary = summary[cols_to_front + [col for col in summary.columns if col not in cols_to_front]]
-    summary.to_csv(f"summary_{UPPER}_{LOWER}_{SIGMA}.csv")
+    summary.to_csv(f"summary_{UPPER}_{LOWER}_{SIGMA}_final.csv")

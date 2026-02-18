@@ -2,6 +2,7 @@ import json
 import os
 
 import pandas as pd
+import skimage
 import torch.nn as nn
 from scipy.ndimage import binary_dilation
 from torch.utils.data import DataLoader
@@ -11,6 +12,9 @@ import matplotlib.ticker as mtick
 
 from EarlyStopping import EarlyStopping
 from Utils import *
+from DiceLoss import DiceLoss
+from CombinedLoss import CombinedLoss
+
 
 class Bold:
     BEGIN = "\033[1m"
@@ -53,8 +57,13 @@ class ModelManager:
         # Da das Verhältnis der Klassen (Kante <-> Nicht-Kante) sehr unausgeglichen ist, werden Kantenpixel mit
         # einem in calculate_metrics.py berechneten Faktor überbewertet, der in der Loss-Berechnung
         # ein Gleichgewicht herstellt.
-        weight = torch.tensor([55.2793]).to(GetBestDevice())
-        self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=weight)
+        if self.HYPERPARAMETERS["LOSS_FUNCTION"] == "bce":
+            weight = torch.tensor([self.HYPERPARAMETERS["POS_WEIGHT"]]).to(GetBestDevice())
+            self.loss_fn = nn.BCEWithLogitsLoss(pos_weight=weight)
+        elif self.HYPERPARAMETERS["LOSS_FUNCTION"] == "dice":
+            self.loss_fn = DiceLoss()
+        elif self.HYPERPARAMETERS["LOSS_FUNCTION"] == "combined":
+            self.loss_fn = CombinedLoss(self.HYPERPARAMETERS["BCE_FACTOR"], self.HYPERPARAMETERS["POS_WEIGHT"])
 
         # Während des Trainings werden Metriken für Trainings- und Validierungsdatensatz gespeichert.
         self.metrics = {}
@@ -177,7 +186,7 @@ class ModelManager:
 
         # Gehe vor wie in der Trainingsphase.
         validation_loss = 0
-        preds = []
+        probs = []
         targets = []
         with torch.no_grad():
             pbar = tqdm(self.val_loader, desc=f"Validierung von Epoche {self.epoch}/{self.HYPERPARAMETERS['EPOCHS']}")
@@ -198,8 +207,8 @@ class ModelManager:
 
                     instance_loss += loss.item()
 
-                    pred = torch.sigmoid(pred)
-                    preds.append(pred)
+                    prob = torch.sigmoid(pred)
+                    probs.append(prob)
                     targets.append(mask)
 
                 # Mittlere den Validation Loss über alle möglichen Masken
@@ -208,9 +217,9 @@ class ModelManager:
             validation_loss /= len(self.val_loader)
             print(f"Validierung mit durchschnittlichem Loss {validation_loss:.3f} beendet.")
 
-            preds = torch.cat(preds, dim=0)
+            probs = torch.cat(probs, dim=0)
             targets = torch.cat(targets, dim=0)
-            precision, recall, f1, _, _, _ = self._compute_metrics(preds, targets)
+            precision, recall, f1, _, _, _ = self._compute_metrics(probs, targets)
 
             self.metrics[str(self.epoch)]["validation"] = {
                 "loss": validation_loss,
@@ -242,7 +251,7 @@ class ModelManager:
         self.model.eval()
 
         testing_loss = 0
-        preds = []
+        probs = []
         targets = []
         results = []
         with torch.no_grad():
@@ -267,11 +276,11 @@ class ModelManager:
 
                     instance_loss += loss.item()
 
-                    pred = torch.sigmoid(pred)
-                    preds.append(pred)
+                    prob = torch.sigmoid(pred)
+                    probs.append(prob)
                     targets.append(mask)
 
-                    precision, recall, f1, tp, fp, fn = self._compute_metrics(torch.cat([pred], dim=0),
+                    precision, recall, f1, tp, fp, fn = self._compute_metrics(torch.cat([prob], dim=0),
                                                                               torch.cat([mask], dim=0))
 
                     row[f"annotator_{i}_tp"] = tp
@@ -302,9 +311,9 @@ class ModelManager:
             testing_loss /= len(self.test_loader)
             print(f"Testen mit durchschnittlichem Loss {testing_loss:.3f} beendet.")
 
-            preds = torch.cat(preds, dim=0)
+            probs = torch.cat(probs, dim=0)
             targets = torch.cat(targets, dim=0)
-            precision, recall, f1, _, _, _ = self._compute_metrics(preds, targets)
+            precision, recall, f1, _, _, _ = self._compute_metrics(probs, targets)
 
             self.metrics["testing"] = {
                 "loss": testing_loss,
@@ -384,6 +393,12 @@ class ModelManager:
 
             f.write(f"\n")
 
+            f.write(f"LOSS_FUNCTION           = {self.HYPERPARAMETERS['LOSS_FUNCTION']}\n")
+            f.write(f"POS_WEIGHT              = {self.HYPERPARAMETERS['POS_WEIGHT']}\n")
+            f.write(f"BCE_FACTOR              = {self.HYPERPARAMETERS['BCE_FACTOR']}\n")
+
+            f.write(f"\n")
+
             f.write(f"TOLERANCE               = {self.HYPERPARAMETERS['TOLERANCE']}\n")
 
             f.write(f"\n")
@@ -403,6 +418,10 @@ class ModelManager:
 
         tp, fp, fn = 0, 0, 0
         for i in range(batch_size):
+            # Für vertrauenswürdigere Metriken wird das Kantenbild ausgedünnt, da in den Ground Truths die
+            # Konturen ebenfalls nur ein Pixel breit sind.
+            pred[i] = skimage.morphology.thin(pred[i])
+
             pred_dilated = binary_dilation(pred[i], structure=structure)
             target_dilated = binary_dilation(target[i], structure=structure)
 
