@@ -1,6 +1,6 @@
 import os
 import sys
-
+import argparse
 from scipy.io import loadmat
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
@@ -10,18 +10,19 @@ import numpy as np
 from scipy.ndimage import convolve
 from tqdm import tqdm
 import pandas as pd
+import matplotlib.pyplot as plt
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from exercise_1.solution import compute_metrics, compute_confusion_matrix
-from exercise_1.solution import image_from_array
-########################################################################################################################
-# Constants/Hyperparameters
+from exercise_1.solution import compute_metrics, image_from_array
+
+# Constants
 BASE_PATH = "../../BSDS500/BSDS500/data/"
-PIXEL_BATCH_SIZE = 2048
-N_EPOCHS = 10
-LEARNING_RATE = 0.001
-########################################################################################################################
+
+# Kernels for edge detection
+X_KERNEL = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32)
+Y_KERNEL = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=np.float32)
+
 class MLP(nn.Module):
     def __init__(self, input_size, name):
         super(MLP, self).__init__()
@@ -75,38 +76,35 @@ def preprocess(images, ground_truths, split):
     return images, ground_truths, image_names
 
 def extract_features(image):
-    x_kernel = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32)
-    y_kernel = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=np.float32)
-    
     img = np.array(image)
     gray = np.array(image.convert('L'), dtype=np.float32)
-    dx = convolve(gray, x_kernel, mode='reflect')
-    dy = convolve(gray, y_kernel, mode='reflect')
+    dx = convolve(gray, X_KERNEL, mode='reflect')
+    dy = convolve(gray, Y_KERNEL, mode='reflect')
     magnitude = np.hypot(dx, dy)
     r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
     features = np.stack([r, g, b, gray, dx, dy, magnitude], axis=-1)
     return features.reshape(-1, 7)
     
-def select_pixels(features, labels):
+def select_pixels(features, labels, mode="all_edges"):
     num_pixels = features.shape[0]
     num_edges = np.where(labels == 1)[0].shape[0]    
     total_training_pixels = int(0.1 * num_pixels)
-    if num_edges < total_training_pixels // 2:
+    if mode=="all_edges":
         num_training_edges = num_edges
-        num_training_non_edges = total_training_pixels - num_training_edges
-    else:
-        num_training_edges = total_training_pixels // 2
-        num_training_non_edges = total_training_pixels - num_training_edges
-    edges = np.random.choice(np.where(labels == 1)[0], size=num_training_edges, replace=False)
-    non_edges = np.random.choice(np.where(labels == 0)[0], size=num_training_non_edges, replace=False)
-    training_pixels = np.concatenate([edges, non_edges])
+    elif mode=="half_edges":
+        num_training_edges = num_edges // 2
+    elif mode=="random":
+        num_training_edges = np.random.randint(0, num_edges+1)
+    elif mode=="no_edges":
+        num_training_edges = 0
+    num_training_non_edges = total_training_pixels - num_training_edges
+    training_edges = np.random.choice(np.where(labels == 1)[0], size=num_training_edges, replace=False)
+    training_non_edges = np.random.choice(np.where(labels == 0)[0], size=num_training_non_edges, replace=False)
+    training_pixels = np.concatenate([training_edges, training_non_edges]) 
     training_features = features[training_pixels]
     training_labels = labels[training_pixels]
     pos_weight = torch.tensor([num_training_non_edges / max(num_training_edges, 1)], dtype=torch.float32) 
-    return training_pixels, training_features, training_labels, pos_weight
-
-def normalize_features(features):
-    return (features - features.mean(axis=0)) / features.std(axis=0)
+    return training_pixels, training_features, training_labels, pos_weight, num_training_edges, num_edges
     
 def create_comparison_image(original, edge_mask, ground_truth):
     # Resize to common height (optional: preserves aspect ratio)
@@ -130,59 +128,94 @@ def create_comparison_image(original, edge_mask, ground_truth):
     
     return combined
 
+def plot_loss_history(loss_history):
+    average_loss = np.mean([row["loss_history"] for row in loss_history], axis=0)
+    max_loss = np.max([row["loss_history"] for row in loss_history], axis=0)
+    min_loss = np.min([row["loss_history"] for row in loss_history], axis=0)
+    median_loss = np.median([row["loss_history"] for row in loss_history], axis=0)
+    p75_loss = np.percentile([row["loss_history"] for row in loss_history], 75, axis=0)
+    p25_loss = np.percentile([row["loss_history"] for row in loss_history], 25, axis=0)
+    plt.plot(range(len(average_loss)), average_loss)
+    plt.plot(range(len(max_loss)), max_loss)
+    plt.plot(range(len(min_loss)), min_loss)
+    plt.plot(range(len(median_loss)), median_loss)
+    plt.plot(range(len(p75_loss)), p75_loss)
+    plt.plot(range(len(p25_loss)), p25_loss)
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Loss History")
+    plt.legend(["Average Loss", "Max Loss", "Min Loss", "Median Loss", "75% Loss", "25% Loss"])
+    plt.savefig(f"results/{SELECT_MODE}_{N_EPOCHS}_epochs/loss_history.png")
+    plt.close()  
+
 if __name__ == "__main__":
-    # Training
-    train_images = load_data("train")
-    train_ground_truth = load_ground_truth("train")
-    val_images = load_data("val")
-    val_ground_truth = load_ground_truth("val")
-    test_images = load_data("test")
-    test_ground_truth = load_ground_truth("test")
-    train_images, train_ground_truth, image_names = preprocess(train_images, train_ground_truth, "train")
-    val_images, val_ground_truth, val_image_names = preprocess(val_images, val_ground_truth, "val")
-    test_images, test_ground_truth, test_image_names = preprocess(test_images, test_ground_truth, "test")
-    images = train_images + val_images + test_images
-    ground_truths = train_ground_truth + val_ground_truth + test_ground_truth
-    image_names = image_names + val_image_names + test_image_names
+    np.random.seed(42)
+    torch.manual_seed(42)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, default="all_edges", choices=["all_edges", "half_edges", "random", "no_edges"])
+    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--batch_size", type=int, default=4096)
+    parser.add_argument("--learning_rate", type=float, default=0.001)
+    args = parser.parse_args()
+    SELECT_MODE = args.mode
+    N_EPOCHS = args.epochs
+    PIXEL_BATCH_SIZE = args.batch_size
+    LEARNING_RATE = args.learning_rate
+    # Load and preprocess data
+    images = load_data("test")
+    ground_truths = load_ground_truth("test")
+    images, ground_truths, image_names = preprocess(images, ground_truths, "test")
     # Extract features
-    training_data = []
+    data = []
     for img, gt, img_name in zip(images, ground_truths, image_names):
         features = extract_features(img)
         labels = gt.flatten()
-        training_data.append({"features": features, "labels": labels, "image_name": img_name})
+        data.append({"features": features, "labels": labels, "image_name": img_name})
     # Loop over all images 
-    os.makedirs("edge_masks", exist_ok=True)
+    os.makedirs(f"results/{SELECT_MODE}_{N_EPOCHS}_epochs/edge_masks", exist_ok=True)
     summary = []
-    for i, image in enumerate(tqdm(training_data)):
+    loss_history = []   
+    print(f"Training {len(data)} images")
+    print(f"Using selection mode {SELECT_MODE}, training for {N_EPOCHS} epochs with pixel batch size: {PIXEL_BATCH_SIZE} and learning rate {LEARNING_RATE}")
+    for i, image in enumerate(tqdm(data)):
         all_pixels = np.arange(image["features"].shape[0])
         all_features = image["features"]
         all_labels = image["labels"]
         image_name = image["image_name"]
         # Select 10% of pixels and compute pos_weight
-        training_pixels, training_features, training_labels, pos_weight = select_pixels(all_features, all_labels)
+        training_pixels, training_features, training_labels, pos_weight, num_training_edges, num_edges = select_pixels(all_features, all_labels, SELECT_MODE)
         # Normalize features
-        training_features = normalize_features(training_features)
+        training_mean = training_features.mean(axis=0)
+        training_std = training_features.std(axis=0)
+        training_features = (training_features - training_mean) / (training_std + 1e-6)
+        # Create training dataset and loader
         training_dataset = ImageDataset(training_features, training_labels)
         training_loader = DataLoader(training_dataset, batch_size=PIXEL_BATCH_SIZE, shuffle=True)
         model = MLP(input_size=training_features.shape[1], name=image_name)
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
         criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        loss_history.append({"image_name": image_name, "loss_history": []})
         for epoch in range(N_EPOCHS):
+            epoch_loss = 0
             for features, labels in training_loader:
                 optimizer.zero_grad()
                 outputs = model(features)
                 loss = criterion(outputs.squeeze(-1), labels)
                 loss.backward()
                 optimizer.step()
+                epoch_loss += loss.item()
+
+            loss_history[-1]["loss_history"].append(epoch_loss / len(training_loader))
 
         # Inference on other 90% of pixels
         inference_pixels = all_pixels[~np.isin(all_pixels, training_pixels)]
-        inference_features = torch.tensor(all_features[inference_pixels])
-        inference_features = normalize_features(inference_features)
+        inference_features = (all_features[inference_pixels])
+        inference_features = (inference_features - training_mean) / (training_std + 1e-6)
+        inference_features = torch.tensor(inference_features)
         inference_labels = torch.tensor(all_labels[inference_pixels])
-        predictions = model(inference_features)
-        pred_bin = (torch.sigmoid(predictions) >= 0.5).int().squeeze(-1)
-
+        with torch.no_grad():
+            predictions = model(inference_features)
+            pred_bin = (torch.sigmoid(predictions) >= 0.5).int().squeeze(-1)
         # Combine training pixels and inference pixels into a single edge mask
         edge_mask = np.zeros(all_labels.shape)
         edge_mask[training_pixels] = training_labels
@@ -194,18 +227,33 @@ if __name__ == "__main__":
         # Compute metrics
         row = {"id": image_name}
         metrics = compute_metrics(edge_mask.astype(bool), ground_truth.astype(bool))
-        row["precision"] = metrics["precision"]
-        row["recall"] = metrics["recall"]
-        row["f1"] = metrics["f1"]
-        row["tp"] = metrics["tp"]
-        row["fp"] = metrics["fp"]
-        row["fn"] = metrics["fn"]
+        row["precision"] = f"{metrics['precision']:.2f}"
+        row["recall"] = f"{metrics['recall']:.2f}"
+        row["f1"] = f"{metrics['f1']:.2f}"
+        row["tp"] = f"{metrics['tp']}"
+        row["fp"] = f"{metrics['fp']}"
+        row["fn"] = f"{metrics['fn']}"
+        row["num_training_edges"] = num_training_edges
+        row["num_edges"] = num_edges
         summary.append(row)
-        # Save edge mask and ground truth in one file
-        edge_mask_img = image_from_array(edge_mask)
-        ground_truth_img = image_from_array(all_labels.reshape(h, w))
-        combined_img = create_comparison_image(images[i], edge_mask_img, ground_truth_img)
-        combined_img.save(f"edge_masks/comparison_{image_name}.png")
+        # Save edge mask and ground truth in one file every 50 images
+        if i % 20 == 0:
+            edge_mask_img = image_from_array(edge_mask)
+            ground_truth_img = image_from_array(all_labels.reshape(h, w))
+            combined_img = create_comparison_image(images[i], edge_mask_img, ground_truth_img)
+            combined_img.save(f"results/{SELECT_MODE}_{N_EPOCHS}_epochs/edge_masks/comparison_{image_name}.png")
 
+    # Save summary to csv
+    average_precision = np.mean([float(row["precision"]) for row in summary])
+    average_recall = np.mean([float(row["recall"]) for row in summary])
+    average_f1 = np.mean([float(row["f1"]) for row in summary])
+    average_tp = np.mean([int(row["tp"]) for row in summary])
+    average_fp = np.mean([int(row["fp"]) for row in summary])
+    average_fn = np.mean([int(row["fn"]) for row in summary])
+    average_num_training_edges = np.mean([float(row["num_training_edges"]) for row in summary])
+    average_num_edges = np.mean([float(row["num_edges"]) for row in summary])
+    summary.insert(0, {"id": "average", "precision": f"{average_precision:.2f}", "recall": f"{average_recall:.2f}", "f1": f"{average_f1:.2f}", "tp": f"{average_tp}", "fp": f"{average_fp}", "fn": f"{average_fn}", "num_training_edges": f"{average_num_training_edges}", "num_edges": f"{average_num_edges}"})
     summary = pd.DataFrame(summary)
-    summary.to_csv("summary.csv")
+    summary.to_csv(f"results/{SELECT_MODE}_{N_EPOCHS}_epochs/summary.csv")
+    # Plot loss history 
+    plot_loss_history(loss_history)  
