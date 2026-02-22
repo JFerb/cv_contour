@@ -132,21 +132,32 @@ def plot_loss_history(loss_history):
     average_loss = np.mean([row["loss_history"] for row in loss_history], axis=0)
     max_loss = np.max([row["loss_history"] for row in loss_history], axis=0)
     min_loss = np.min([row["loss_history"] for row in loss_history], axis=0)
-    median_loss = np.median([row["loss_history"] for row in loss_history], axis=0)
     p75_loss = np.percentile([row["loss_history"] for row in loss_history], 75, axis=0)
     p25_loss = np.percentile([row["loss_history"] for row in loss_history], 25, axis=0)
-    plt.plot(range(len(average_loss)), average_loss)
-    plt.plot(range(len(max_loss)), max_loss)
-    plt.plot(range(len(min_loss)), min_loss)
-    plt.plot(range(len(median_loss)), median_loss)
-    plt.plot(range(len(p75_loss)), p75_loss)
-    plt.plot(range(len(p25_loss)), p25_loss)
+    epochs = range(len(average_loss))
+    plt.plot(epochs, average_loss, label="Average Loss")
+    plt.plot(epochs, max_loss, label="Max Loss")
+    plt.plot(epochs, min_loss, label="Min Loss")
+    # Plot shaded region between 25th and 75th percentiles
+    plt.fill_between(epochs, p25_loss, p75_loss, color='gray', alpha=0.3, label='25-75% Range')
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
-    plt.title("Loss History")
-    plt.legend(["Average Loss", "Max Loss", "Min Loss", "Median Loss", "75% Loss", "25% Loss"])
+    plt.title(f"Loss History for mode {SELECT_MODE}")
+    plt.legend()
     plt.savefig(f"results/{SELECT_MODE}_{N_EPOCHS}_epochs/loss_history.png")
     plt.close()  
+
+def load_all_ground_truths(mat_path):
+    data = loadmat(mat_path)["groundTruth"][0]
+    gts = []
+    for i in range(len(data)):
+        gt = data[i][0][0][1]
+        gt = image_from_array(gt).rotate(90, expand=True) if gt.shape[0] > gt.shape[1] else np.array(image_from_array(gt))
+        if isinstance(gt, np.ndarray) and gt.dtype != np.uint8:
+            gt = np.array(gt)
+        gt = (np.array(gt, dtype=np.float32) * (255 if np.array(gt).max() <= 1 else 1) >= 128).astype(bool)
+        gts.append(gt)
+    return gts
 
 if __name__ == "__main__":
     np.random.seed(42)
@@ -224,17 +235,35 @@ if __name__ == "__main__":
         edge_mask = edge_mask.reshape(h, w)
         ground_truth = all_labels.reshape(h, w)
 
-        # Compute metrics
+        # Compute metrics against all annotators
+        mat_path = os.path.join(BASE_PATH, "groundTruth", "test", image_name + ".mat")
+        all_gts = load_all_ground_truths(mat_path)
+        
         row = {"id": image_name}
-        metrics = compute_metrics(edge_mask.astype(bool), ground_truth.astype(bool))
-        row["precision"] = f"{metrics['precision']:.2f}"
-        row["recall"] = f"{metrics['recall']:.2f}"
-        row["f1"] = f"{metrics['f1']:.2f}"
-        row["tp"] = f"{metrics['tp']}"
-        row["fp"] = f"{metrics['fp']}"
-        row["fn"] = f"{metrics['fn']}"
         row["num_training_edges"] = num_training_edges
         row["num_edges"] = num_edges
+        for j, gt in enumerate(all_gts):
+            metrics = compute_metrics(edge_mask.astype(bool), gt.astype(bool))
+            row[f"annotator_{j}_precision"] = metrics["precision"]
+            row[f"annotator_{j}_recall"] = metrics["recall"]
+            row[f"annotator_{j}_f1"] = metrics["f1"]
+            row[f"annotator_{j}_tp"] = metrics["tp"]
+            row[f"annotator_{j}_fp"] = metrics["fp"]
+            row[f"annotator_{j}_fn"] = metrics["fn"]
+
+        # Best and average metrics
+        all_precisions = [row[f"annotator_{j}_precision"] for j in range(len(all_gts))]
+        row["best_precision"] = max(all_precisions)
+        row["mean_precision"] = np.mean(all_precisions)
+
+        all_recalls = [row[f"annotator_{j}_recall"] for j in range(len(all_gts))]
+        row["best_recall"] = max(all_recalls)
+        row["mean_recall"] = np.mean(all_recalls)
+
+        all_f1s = [row[f"annotator_{j}_f1"] for j in range(len(all_gts))]
+        row["best_f1"] = max(all_f1s)
+        row["mean_f1"] = np.mean(all_f1s)
+
         summary.append(row)
         # Save edge mask and ground truth in one file every 50 images
         if i % 20 == 0:
@@ -244,15 +273,18 @@ if __name__ == "__main__":
             combined_img.save(f"results/{SELECT_MODE}_{N_EPOCHS}_epochs/edge_masks/comparison_{image_name}.png")
 
     # Save summary to csv
-    average_precision = np.mean([float(row["precision"]) for row in summary])
-    average_recall = np.mean([float(row["recall"]) for row in summary])
-    average_f1 = np.mean([float(row["f1"]) for row in summary])
-    average_tp = np.mean([int(row["tp"]) for row in summary])
-    average_fp = np.mean([int(row["fp"]) for row in summary])
-    average_fn = np.mean([int(row["fn"]) for row in summary])
-    average_num_training_edges = np.mean([float(row["num_training_edges"]) for row in summary])
-    average_num_edges = np.mean([float(row["num_edges"]) for row in summary])
-    summary.insert(0, {"id": "average", "precision": f"{average_precision:.2f}", "recall": f"{average_recall:.2f}", "f1": f"{average_f1:.2f}", "tp": f"{average_tp}", "fp": f"{average_fp}", "fn": f"{average_fn}", "num_training_edges": f"{average_num_training_edges}", "num_edges": f"{average_num_edges}"})
+    avg_row= {
+        "id": "average",
+        "num_training_edges": np.mean([float(row["num_training_edges"]) for row in summary]),
+        "num_edges": np.mean([float(row["num_edges"]) for row in summary]),
+        "best_precision": np.mean([float(row["best_precision"]) for row in summary]),
+        "mean_precision": np.mean([float(row["mean_precision"]) for row in summary]),
+        "best_recall": np.mean([float(row["best_recall"]) for row in summary]),
+        "mean_recall": np.mean([float(row["mean_recall"]) for row in summary]),
+        "best_f1": np.mean([float(row["best_f1"]) for row in summary]),
+        "mean_f1": np.mean([float(row["mean_f1"]) for row in summary]),
+    }
+    summary.insert(0, avg_row)
     summary = pd.DataFrame(summary)
     summary.to_csv(f"results/{SELECT_MODE}_{N_EPOCHS}_epochs/summary.csv")
     # Plot loss history 
