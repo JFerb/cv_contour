@@ -7,7 +7,7 @@ from PIL import Image
 import torch
 import torch.nn as nn
 import numpy as np
-from scipy.ndimage import convolve
+from scipy.ndimage import convolve, uniform_filter
 from tqdm import tqdm
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -22,6 +22,7 @@ BASE_PATH = "../../BSDS500/BSDS500/data/"
 # Kernels for edge detection
 X_KERNEL = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=np.float32)
 Y_KERNEL = np.array([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=np.float32)
+LAPLACIAN_KERNEL = np.array([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=np.float32)
 
 class MLP(nn.Module):
     def __init__(self, input_size, name):
@@ -81,9 +82,13 @@ def extract_features(image):
     dx = convolve(gray, X_KERNEL, mode='reflect')
     dy = convolve(gray, Y_KERNEL, mode='reflect')
     magnitude = np.hypot(dx, dy)
+    laplacian = convolve(gray, LAPLACIAN_KERNEL, mode='reflect')
+    mean_5x5 = uniform_filter(gray, size=5, mode='reflect')
+    mean_sq_5x5 = uniform_filter(gray**2, size=5, mode='reflect')
+    variance_5x5 = mean_sq_5x5 - mean_5x5**2
     r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
-    features = np.stack([r, g, b, gray, dx, dy, magnitude], axis=-1)
-    return features.reshape(-1, 7)
+    features = np.stack([r, g, b, gray, dx, dy, magnitude, laplacian, variance_5x5], axis=-1)
+    return features.reshape(-1, features.shape[-1])
     
 def select_pixels(features, labels, mode="all_edges"):
     num_pixels = features.shape[0]

@@ -11,12 +11,12 @@ canny_stats = {
 }
 
 mlp_stats = {
-    "precision_avg": 0.26444,
-    "recall_avg": 0.987156,
-    "f1_avg": 0.40637,
-    "precision_best": 0.34346,
+    "precision_avg": 0.30985,
+    "recall_avg": 0.98355,
+    "f1_avg": 0.45733,
+    "precision_best": 0.39646,
     "recall_best": 1.0,
-    "f1_best": 0.49749,
+    "f1_best": 0.55002,
 }
 
 unet_stats = {
@@ -55,7 +55,7 @@ plt.figure(figsize=(8, 5))
 for (avg_key, best_key, label), color in zip(metric_groups, fill_colors):
     avg_vals = [canny_stats[avg_key], mlp_stats[avg_key], unet_stats[avg_key]]
     best_vals = [canny_stats[best_key], mlp_stats[best_key], unet_stats[best_key]]
-    plt.fill_between(x, avg_vals, best_vals, alpha=0.3, color=color, label=f"{label.title()} (avg ↔ best)")
+    plt.fill_between(x, avg_vals, best_vals, alpha=0.3, color=color, label=f"{label.title()} (avg ↔ opt)")
 
 # Plot the 6 lines on top (same colors as fills)
 stat_colors = {
@@ -65,12 +65,14 @@ stat_colors = {
 }
 for stat_key, stat_label in stats:
     values = [canny_stats[stat_key], mlp_stats[stat_key], unet_stats[stat_key]]
-    plt.plot(x, values, marker="o", color=stat_colors[stat_key])
+    marker = "o" if "avg" in stat_key else "x"
+    plt.plot(x, values, marker=marker, markersize=8, color=stat_colors[stat_key])
 
 plt.xticks(x, algorithms)
-plt.xlabel("Algorithm")
-plt.ylabel("Score")
-plt.title("All Statistics across Canny, MLP, and UNet")
+plt.ylim(0, 1)
+plt.xlabel("Algorithmus")
+plt.ylabel("Wert")
+plt.title("Alle Statistiken von Canny, MLP und UNet")
 plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 plt.tight_layout()
 plt.savefig("all_statistics_comparison.png")
